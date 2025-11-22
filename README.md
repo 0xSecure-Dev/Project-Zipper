@@ -35,6 +35,18 @@ Creating archive for H:\Example\Project (6.1 MB)...
 ✓ Archive complete: H:\Example\Project -> H:\Example\Project.zip (6.1 MB source, 2.9 MB archive, 12 files)
 ```
 
+## Windows Env
+
+```text
+
+To add the tool to the system `env` you can copy the pz.exe from `bin\pz.exe` to `C:\Program files\pz\pz.exe`.
+Then `start` type `env` click `Enviroment Variables` select `Path > Edit > New`.
+Then paste `C:\Program files\pz\`.
+
+Open `cmd / powershell` type `pz` and you should get `Usage: pz <folder>`.
+
+```
+
 ## Development
 
 ```powershell
