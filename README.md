@@ -48,6 +48,8 @@ go build ./...
 go test ./...
 ```
 
+`pzip` Can be renamed to `pz` when you run `go build -o pz.exe`
+
 ## Continuous Integration
 
 This repository includes a GitHub Actions workflow (`.github/workflows/ci.yml`) that checks formatting and runs the test suite on each push and pull request.
