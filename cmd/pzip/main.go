@@ -9,13 +9,19 @@ import (
 	"strings"
 	"time"
 
-	"projectzipper/internal/zipper"
+	"github.com/0xRepo-Source/Project-Zipper/internal/zipper"
 )
 
 func main() {
+	extractFlag := flag.Bool("x", false, "extract mode: extract zip archive to destination")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s <folder>\n", filepath.Base(os.Args[0]))
-		fmt.Fprintln(flag.CommandLine.Output(), "Create a zip archive of the specified folder in the same parent directory.")
+		fmt.Fprintf(flag.CommandLine.Output(), "Usage: %s [options] <source> [destination]\n", filepath.Base(os.Args[0]))
+		fmt.Fprintln(flag.CommandLine.Output(), "\nCreate or extract zip archives.")
+		fmt.Fprintln(flag.CommandLine.Output(), "CREATE MODE (default):")
+		fmt.Fprintln(flag.CommandLine.Output(), "  pz <folder>           Create a zip archive of the folder")
+		fmt.Fprintln(flag.CommandLine.Output(), "\nEXTRACT MODE:")
+		fmt.Fprintln(flag.CommandLine.Output(), "  pz -x <archive.zip>   Extract archive to current directory")
+		fmt.Fprintln(flag.CommandLine.Output(), "  pz -x <archive.zip> <dest>  Extract archive to destination folder")
 	}
 
 	flag.Parse()
@@ -25,7 +31,15 @@ func main() {
 		os.Exit(2)
 	}
 
-	target := strings.Join(flag.Args(), " ")
+	if *extractFlag {
+		doExtract(flag.Args())
+	} else {
+		doCreate(flag.Args())
+	}
+}
+
+func doCreate(args []string) {
+	target := strings.Join(args, " ")
 	absTarget, err := filepath.Abs(target)
 	if err != nil {
 		exitWithError(err)
@@ -47,7 +61,7 @@ func main() {
 		exitWithError(err)
 	}
 
-	printer := newProgressPrinter(absTarget)
+	printer := newCreateProgressPrinter(absTarget)
 	stats, err := zipper.ZipWithProgress(absTarget, zipPath, printer.OnProgress)
 	if err != nil {
 		exitWithError(err)
@@ -57,12 +71,64 @@ func main() {
 	fmt.Println(zipPath)
 }
 
+func doExtract(args []string) {
+	if len(args) < 1 {
+		exitWithError(errors.New("extract mode requires a zip file"))
+	}
+
+	zipPath := strings.Join(args, " ")
+	if len(args) > 1 {
+		// If multiple args, first is zip, rest is destination
+		zipPath = args[0]
+	}
+
+	absZipPath, err := filepath.Abs(zipPath)
+	if err != nil {
+		exitWithError(err)
+	}
+
+	info, err := os.Stat(absZipPath)
+	if err != nil {
+		exitWithError(err)
+	}
+	if info.IsDir() {
+		exitWithError(errors.New("source must be a zip file, not a directory"))
+	}
+
+	// Determine destination
+	var destDir string
+	if len(args) > 1 {
+		destDir = strings.Join(args[1:], " ")
+	} else {
+		// Extract to current directory
+		destDir, err = os.Getwd()
+		if err != nil {
+			exitWithError(err)
+		}
+	}
+
+	absDestDir, err := filepath.Abs(destDir)
+	if err != nil {
+		exitWithError(err)
+	}
+
+	printer := newExtractProgressPrinter(absZipPath, absDestDir)
+	stats, err := zipper.ExtractWithProgress(absZipPath, absDestDir, printer.OnProgress)
+	if err != nil {
+		exitWithError(err)
+	}
+	printer.Complete(stats)
+
+	fmt.Println(absDestDir)
+}
+
 func exitWithError(err error) {
-	fmt.Fprintln(os.Stderr, "pzip:", err)
+	fmt.Fprintln(os.Stderr, "pz:", err)
 	os.Exit(1)
 }
 
-type progressPrinter struct {
+// Create mode progress printer
+type createProgressPrinter struct {
 	source    string
 	started   bool
 	startTime time.Time
@@ -70,11 +136,11 @@ type progressPrinter struct {
 	lastLen   int
 }
 
-func newProgressPrinter(source string) *progressPrinter {
-	return &progressPrinter{source: source}
+func newCreateProgressPrinter(source string) *createProgressPrinter {
+	return &createProgressPrinter{source: source}
 }
 
-func (p *progressPrinter) OnProgress(done, total int64) {
+func (p *createProgressPrinter) OnProgress(done, total int64) {
 	if !p.started {
 		p.started = true
 		p.startTime = time.Now()
@@ -86,7 +152,7 @@ func (p *progressPrinter) OnProgress(done, total int64) {
 	p.printLine(line)
 }
 
-func (p *progressPrinter) renderLine(done, total int64) string {
+func (p *createProgressPrinter) renderLine(done, total int64) string {
 	const barWidth = 50
 
 	filled := 0
@@ -123,7 +189,7 @@ func (p *progressPrinter) renderLine(done, total int64) string {
 	return fmt.Sprintf("[%s] %3.0f%% (%s/%s) %s", bar, percent, formatBytes(done), formatBytes(total), speed)
 }
 
-func (p *progressPrinter) printLine(line string) {
+func (p *createProgressPrinter) printLine(line string) {
 	if pad := p.lastLen - len(line); pad > 0 {
 		line += strings.Repeat(" ", pad)
 	}
@@ -131,7 +197,7 @@ func (p *progressPrinter) printLine(line string) {
 	p.lastLen = len(line)
 }
 
-func (p *progressPrinter) Complete(zipPath string, stats zipper.ArchiveStats) {
+func (p *createProgressPrinter) Complete(zipPath string, stats zipper.ArchiveStats) {
 	if !p.started {
 		fmt.Println("No files to archive; created empty zip.")
 		return
@@ -150,6 +216,100 @@ func (p *progressPrinter) Complete(zipPath string, stats zipper.ArchiveStats) {
 		formatBytes(zipSize),
 		stats.FileCount,
 	)
+}
+
+// Extract mode progress printer
+type extractProgressPrinter struct {
+	zipPath   string
+	destDir   string
+	started   bool
+	startTime time.Time
+	total     int64
+	lastLen   int
+}
+
+func newExtractProgressPrinter(zipPath, destDir string) *extractProgressPrinter {
+	return &extractProgressPrinter{
+		zipPath: zipPath,
+		destDir: destDir,
+	}
+}
+
+func (p *extractProgressPrinter) OnProgress(done, total int64) {
+	if !p.started {
+		p.started = true
+		p.startTime = time.Now()
+		p.total = total
+		fmt.Fprintf(os.Stdout, "Extracting %s (%s)...\n", filepath.Base(p.zipPath), formatBytes(total))
+	}
+
+	line := p.renderLine(done, total)
+	p.printLine(line)
+}
+
+func (p *extractProgressPrinter) renderLine(done, total int64) string {
+	const barWidth = 50
+
+	filled := 0
+	percent := 100.0
+	if total > 0 {
+		percent = (float64(done) / float64(total)) * 100
+		if percent < 0 {
+			percent = 0
+		}
+		if percent > 100 {
+			percent = 100
+		}
+		filled = int((done * int64(barWidth)) / total)
+	} else {
+		filled = barWidth
+	}
+	if filled > barWidth {
+		filled = barWidth
+	}
+
+	bar := strings.Repeat("#", filled) + strings.Repeat("-", barWidth-filled)
+	selapsed := time.Since(p.startTime)
+	speed := "0 B/s"
+	if selapsed > 0 {
+		bytesPerSec := float64(done) / selapsed.Seconds()
+		if bytesPerSec < 0 {
+			bytesPerSec = 0
+		}
+		speedValue := int64(bytesPerSec + 0.5)
+		speed = fmt.Sprintf("%s/s", formatBytes(speedValue))
+	}
+
+	return fmt.Sprintf("[%s] %3.0f%% (%s/%s) %s", bar, percent, formatBytes(done), formatBytes(total), speed)
+}
+
+func (p *extractProgressPrinter) printLine(line string) {
+	if pad := p.lastLen - len(line); pad > 0 {
+		line += strings.Repeat(" ", pad)
+	}
+	fmt.Printf("\r%s", line)
+	p.lastLen = len(line)
+}
+
+func (p *extractProgressPrinter) Complete(stats zipper.ExtractStats) {
+	if !p.started {
+		fmt.Println("No files extracted.")
+		return
+	}
+	fmt.Print("\n")
+	p.lastLen = 0
+	fmt.Fprintf(os.Stdout, "✓ Extraction complete: %s -> %s (%s extracted, %d files)\n",
+		filepath.Base(p.zipPath),
+		p.destDir,
+		formatBytes(stats.TotalBytes),
+		stats.FileCount,
+	)
+}
+
+type progressPrinter = createProgressPrinter
+
+func newProgressPrinter(source string) *progressPrinter {
+	return newCreateProgressPrinter(source)
 }
 
 func formatBytes(n int64) string {

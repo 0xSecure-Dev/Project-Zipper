@@ -1,6 +1,6 @@
 # Project Zipper
 
-`pzip` is a lightweight Go CLI that creates zip archives of project folders using only the Go standard library. It generates unique archive names by appending version suffixes when a zip with the base name already exists.
+`pz` is a lightweight Go CLI that creates and extracts zip archives using only the Go standard library. It generates unique archive names by appending version suffixes when a zip with the base name already exists.
 
 ## Prerequisites
 
@@ -17,22 +17,45 @@ This installs the `pzip` binary into your `$GOBIN` (or `$GOPATH/bin`).
 
 ## Usage
 
+### Create Archive
+
 ```powershell
-pzip <path-to-folder>
+pz <path-to-folder>
 ```
 
 - Archives the specified folder into `<folder>.zip` alongside the source folder.
 - If `<folder>.zip` already exists, a versioned archive such as `<folder>-v1.zip`, `<folder>-v2.zip`, etc. is created instead.
-- Paths containing spaces are supported without quoting (e.g. `pzip C:\Active Projects`).
+- Paths containing spaces are supported without quoting (e.g. `pz C:\Active Projects`).
+
+### Extract Archive
+
+```powershell
+# Extract to current directory
+pz -x <archive.zip>
+
+# Extract to specific destination
+pz -x <archive.zip> <destination-folder>
+```
+
+- Extracts the contents of a zip archive
+- Creates destination directory if it doesn't exist
+- Shows progress bar with extraction speed
+- Includes path traversal protection for security
 
 ### Progress Output
 
-`pzip` renders a live progress bar while zipping:
-
+**Creating Archive:**
 ```text
 Creating archive for H:\Example\Project (6.1 MB)...
 [##############################--------------------] 62% (3.8 MB/6.1 MB) 4.2 MB/s
-✓ Archive complete: H:\Example\Project -> H:\Example\Project.zip (6.1 MB source, 2.9 MB archive, 12 files)
+Archive complete: H:\Example\Project -> H:\Example\Project.zip (6.1 MB source, 2.9 MB archive, 12 files)
+```
+
+**Extracting Archive:**
+```text
+Extracting Project.zip (2.9 MB)...
+[##################################################] 100% (6.1 MB/6.1 MB) 8.3 MB/s
+Extraction complete: Project.zip -> H:\Example\Extracted (6.1 MB extracted, 12 files)
 ```
 
 ## Windows Env
