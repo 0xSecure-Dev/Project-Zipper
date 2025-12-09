@@ -4,6 +4,12 @@
 
 ## Features
 
+- **Smart Auto-Compression** - Automatically optimizes compression level based on file size and type
+  - Small archives (<10MB): Maximum compression for best results
+  - Medium archives (10-100MB): Balanced compression
+  - Large archives (100-500MB): Speed-favored compression
+  - Very large archives (>500MB): Maximum speed
+  - Already-compressed files (JPG, PNG, MP4, ZIP, etc.): Stored without recompression for efficiency
 - **Multi-threaded compression/extraction** - Automatically uses 50% of available CPU cores for parallel processing
 - **Multiple formats** - Supports both ZIP and tar.gz formats
 - **Smart naming** - Auto-versioning (e.g., `project.zip`, `project-v1.zip`, `project-v2.zip`)

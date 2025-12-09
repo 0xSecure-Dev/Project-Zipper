@@ -3,6 +3,7 @@ package zipper
 import (
 	"archive/tar"
 	"archive/zip"
+	"compress/flate"
 	"compress/gzip"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 )
 
@@ -40,6 +42,39 @@ type fileJob struct {
 	isDir bool
 }
 
+// getCompressionMethod returns the optimal compression method for a file
+// Returns zip.Store for already-compressed files, zip.Deflate for everything else
+func getCompressionMethod(filename string) uint16 {
+	ext := strings.ToLower(filepath.Ext(filename))
+	// Already compressed formats - store without recompression
+	noCompress := map[string]bool{
+		".zip": true, ".gz": true, ".7z": true, ".rar": true,
+		".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true,
+		".mp3": true, ".mp4": true, ".avi": true, ".mkv": true, ".mov": true,
+		".pdf": true, ".docx": true, ".xlsx": true, ".pptx": true,
+	}
+	if noCompress[ext] {
+		return zip.Store
+	}
+	return zip.Deflate
+}
+
+// getOptimalCompressionLevel returns compression level based on total archive size
+// Larger archives use faster compression, smaller archives get better compression
+func getOptimalCompressionLevel(totalSize int64) int {
+	const MB = 1024 * 1024
+	switch {
+	case totalSize < 10*MB:
+		return flate.BestCompression // Small files: max compression
+	case totalSize < 100*MB:
+		return flate.DefaultCompression // Medium: balanced
+	case totalSize < 500*MB:
+		return 4 // Large: favor speed
+	default:
+		return flate.BestSpeed // Very large: maximum speed
+	}
+}
+
 // Zip archives the contents of srcDir into zipPath using only the Go standard library.
 func Zip(srcDir, zipPath string) error {
 	_, err := ZipWithProgress(srcDir, zipPath, nil)
@@ -64,6 +99,11 @@ func ZipWithProgress(srcDir, zipPath string, progress ProgressFunc) (stats Archi
 	}()
 
 	writer := zip.NewWriter(zipFile)
+	// Register custom compressor with optimal level based on total size
+	compressionLevel := getOptimalCompressionLevel(stats.TotalBytes)
+	writer.RegisterCompressor(zip.Deflate, func(out io.Writer) (io.WriteCloser, error) {
+		return flate.NewWriter(out, compressionLevel)
+	})
 	defer func() {
 		if cerr := writer.Close(); err == nil {
 			err = cerr
@@ -177,7 +217,7 @@ func ZipWithProgress(srcDir, zipPath string, progress ProgressFunc) (stats Archi
 		if fd.job.isDir {
 			header.Name += "/"
 		} else {
-			header.Method = zip.Deflate
+			header.Method = getCompressionMethod(fd.job.path)
 		}
 
 		writerEntry, err := writer.CreateHeader(header)
@@ -467,7 +507,9 @@ func GzipWithProgress(srcDir, gzipPath string, progress ProgressFunc) (stats Arc
 		}
 	}()
 
-	gzWriter, err := gzip.NewWriterLevel(gzipFile, gzip.BestSpeed)
+	// Use optimal compression level based on total size
+	compressionLevel := getOptimalCompressionLevel(stats.TotalBytes)
+	gzWriter, err := gzip.NewWriterLevel(gzipFile, compressionLevel)
 	if err != nil {
 		return stats, err
 	}
