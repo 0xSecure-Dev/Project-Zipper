@@ -260,22 +260,6 @@ func ZipWithProgress(srcDir, zipPath string, progress ProgressFunc) (stats Archi
 	return stats, nil
 }
 
-type progressWriter struct {
-	w        io.Writer
-	done     *int64
-	total    int64
-	progress ProgressFunc
-}
-
-func (pw *progressWriter) Write(p []byte) (int, error) {
-	n, err := pw.w.Write(p)
-	if pw.progress != nil && n > 0 {
-		*pw.done += int64(n)
-		pw.progress(*pw.done, pw.total)
-	}
-	return n, err
-}
-
 func scanDirectory(root string) (ArchiveStats, error) {
 	stats := ArchiveStats{}
 	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, walkErr error) error {
@@ -455,30 +439,6 @@ func ExtractWithProgress(zipPath, destDir string, progress ProgressFunc) (stats 
 
 	callProgress()
 	return stats, nil
-}
-
-func extractFile(f *zip.File, destPath string, done *int64, total int64, progress ProgressFunc) error {
-	rc, err := f.Open()
-	if err != nil {
-		return err
-	}
-	defer rc.Close()
-
-	outFile, err := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
-	if err != nil {
-		return err
-	}
-	defer outFile.Close()
-
-	pr := &progressReader{
-		r:        rc,
-		done:     done,
-		total:    total,
-		progress: progress,
-	}
-
-	_, err = io.Copy(outFile, pr)
-	return err
 }
 
 type progressReader struct {
